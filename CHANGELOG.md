@@ -6,6 +6,11 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 
 ## v2.2.2
 
+### Added
+
+- Added NEW Sentry view that fuses the Flock camera detector, BLE device-detect and NEW WiFi camera/ALPR/Ring/Axon detectors
+- BLE device-detect now recognises Meta glasses and Google Find My tags
+
 ### Fixed
 
 - Fixed a heap buffer overflow in the Sinkhole blocklist when the sinkhole folder held 9 or more `.txt` files
