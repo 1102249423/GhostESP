@@ -50,12 +50,17 @@
 #include <stdio.h>
 #include <string.h>
 
-// Ghostchi faces (always linked; the lockscreen uses them) reused as the alert
-// mascot so the view shares the app's art instead of raw neon.
+// Ghostchi faces, reused as the alert mascot so the view shares the app's art
+// instead of raw neon. They are linked only in display builds: screenless
+// boards exclude the sprite sources to stay inside their app partition (see
+// the CONFIG_WITH_SCREEN block in main/CMakeLists.txt), so the references must
+// compile out there too. Same guard the lockscreen and plugin canvas use.
+#ifdef CONFIG_WITH_SCREEN
 extern const lv_img_dsc_t evil_50x50;
 extern const lv_img_dsc_t angry_50x50;
 extern const lv_img_dsc_t surpised_50x50;
 extern const lv_img_dsc_t what2_50x50;
+#endif
 
 #define SENTRY_RECENT 10
 #define SENTRY_REFRESH_MS 400
@@ -290,6 +295,7 @@ static const char *rec_category(const sentry_rec_t *r) {
 }
 
 static const lv_img_dsc_t *kind_face(uint8_t kind) {
+#ifdef CONFIG_WITH_SCREEN
     switch (kind) {
         case SENTRY_KIND_FLOCK:
         case SENTRY_KIND_SKIMMER: return &evil_50x50;
@@ -297,6 +303,12 @@ static const lv_img_dsc_t *kind_face(uint8_t kind) {
         case SENTRY_KIND_TRACKER: return &surpised_50x50;
         default:                  return &what2_50x50;
     }
+#else
+    // Screenless build: no ghostchi sprites are linked, so the alert overlay
+    // simply gets no mascot. lv_img_set_src() accepts NULL.
+    (void)kind;
+    return NULL;
+#endif
 }
 
 // ---- recent-device cache --------------------------------------------------
