@@ -9,7 +9,8 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 ### Added
 
 - Added NEW Sentry view that fuses the Flock camera detector, BLE device-detect and NEW WiFi camera/ALPR/Ring/Axon detectors
-- BLE device-detect now recognises Meta glasses and Google Find My tags
+- BLE device detect scan now recognises Meta glasses and Google Find My tags
+- Added slide-to-unlock for the no-PIN lockscreen on touchscreen devices and enabled it by default
 
 ### Fixed
 

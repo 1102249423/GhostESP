@@ -2008,6 +2008,9 @@ static SettingsItem settings_items[] = {
 
     {"Lockscreen", SETTING_LOCKSCREEN_ENABLED, bool_options, 2, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
     {"Lock on Wake", SETTING_LOCKSCREEN_WAKE, bool_options, 2, 1, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
+#ifdef CONFIG_USE_TOUCHSCREEN
+    {"Slide to Unlock", SETTING_LOCKSCREEN_SLIDE, bool_options, 2, 1, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
+#endif
     {"Auto-Lock", SETTING_LOCKSCREEN_TIMEOUT, lockscreen_timeout_options, 4, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_VALUE_CYCLE},
     {"Set PIN", SETTING_LOCKSCREEN_CHANGE_PIN, action_options, 1, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_VALUE_CYCLE},
 
@@ -4648,6 +4651,9 @@ static void load_current_settings_values(void) {
             case SETTING_LOCKSCREEN_CHANGE_PIN:
                 settings_items[i].current_value = 0;
                 break;
+            case SETTING_LOCKSCREEN_SLIDE:
+                settings_items[i].current_value = settings_get_lockscreen_slide_unlock(&G_Settings) ? 1 : 0;
+                break;
             case SETTING_WD_HOP_PRIMARY: {
                 uint16_t hp = settings_get_wd_hop_primary_ms(&G_Settings);
                 int idx = 2; // default 100ms
@@ -5349,6 +5355,9 @@ static void apply_setting_change(int setting_index, int new_value) {
             display_manager_switch_view(&lockscreen_view);
             return;
         }
+        case SETTING_LOCKSCREEN_SLIDE:
+            settings_set_lockscreen_slide_unlock(&G_Settings, new_value == 1);
+            break;
         case SETTING_WD_HOP_PRIMARY:
             if (new_value >= 0 && new_value < wd_hop_count) {
                 settings_set_wd_hop_primary_ms(&G_Settings, wd_hop_values[new_value]);
