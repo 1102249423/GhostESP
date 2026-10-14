@@ -102,7 +102,6 @@ static int pcap_capture_page_offset = 0;
 static char *blocklist_file_names = NULL;
 static const char **blocklist_file_options = NULL;
 static int blocklist_page_offset = 0;
-static bool blocklist_has_next_page = false;
 
 static void blocklist_free_cache(void);
 static const char **blocklist_load_page(void);
@@ -2009,6 +2008,9 @@ static SettingsItem settings_items[] = {
 
     {"Lockscreen", SETTING_LOCKSCREEN_ENABLED, bool_options, 2, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
     {"Lock on Wake", SETTING_LOCKSCREEN_WAKE, bool_options, 2, 1, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
+#ifdef CONFIG_USE_TOUCHSCREEN
+    {"Slide to Unlock", SETTING_LOCKSCREEN_SLIDE, bool_options, 2, 1, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_TOGGLE},
+#endif
     {"Auto-Lock", SETTING_LOCKSCREEN_TIMEOUT, lockscreen_timeout_options, 4, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_VALUE_CYCLE},
     {"Set PIN", SETTING_LOCKSCREEN_CHANGE_PIN, action_options, 1, 0, SETTINGS_CAT_LOCKSCREEN, false, NULL, SETTING_WIDGET_VALUE_CYCLE},
 
@@ -4649,6 +4651,9 @@ static void load_current_settings_values(void) {
             case SETTING_LOCKSCREEN_CHANGE_PIN:
                 settings_items[i].current_value = 0;
                 break;
+            case SETTING_LOCKSCREEN_SLIDE:
+                settings_items[i].current_value = settings_get_lockscreen_slide_unlock(&G_Settings) ? 1 : 0;
+                break;
             case SETTING_WD_HOP_PRIMARY: {
                 uint16_t hp = settings_get_wd_hop_primary_ms(&G_Settings);
                 int idx = 2; // default 100ms
@@ -5350,6 +5355,9 @@ static void apply_setting_change(int setting_index, int new_value) {
             display_manager_switch_view(&lockscreen_view);
             return;
         }
+        case SETTING_LOCKSCREEN_SLIDE:
+            settings_set_lockscreen_slide_unlock(&G_Settings, new_value == 1);
+            break;
         case SETTING_WD_HOP_PRIMARY:
             if (new_value >= 0 && new_value < wd_hop_count) {
                 settings_set_wd_hop_primary_ms(&G_Settings, wd_hop_values[new_value]);
@@ -13743,40 +13751,45 @@ static void blocklist_free_cache(void) {
 static const char **blocklist_load_page(void) {
     blocklist_free_cache();
 
-    /* one extra slot for the next-page peek entry */
-    char (*file_names)[MAX_PORTAL_NAME] =
-        malloc((BLOCKLIST_PAGE_SIZE + 1) * MAX_PORTAL_NAME);
-    if (!file_names) return NULL;
+    /* stats.txt lives in the sinkhole folder but is not a blocklist, so the
+     * picker hides it. Page over the *visible* list: load the (small)
+     * directory, drop stats.txt, then slice the requested page. Paging the raw
+     * listing and filtering afterwards made the offset count a hidden file,
+     * which duplicated/skipped an entry across pages. */
+    enum { BLOCKLIST_MAX_FILES = 64 };
+    char (*all_names)[MAX_PORTAL_NAME] =
+        malloc((size_t)BLOCKLIST_MAX_FILES * MAX_PORTAL_NAME);
+    if (!all_names) return NULL;
 
-    int raw_count = sd_card_list_dir_paged(
-        SINKHOLE_DIR_PATH, ".txt",
-        blocklist_page_offset * BLOCKLIST_PAGE_SIZE, BLOCKLIST_PAGE_SIZE + 1,
-        file_names, &blocklist_has_next_page);
-
+    bool more_raw = false;
+    int raw_count = sd_card_list_dir_paged(SINKHOLE_DIR_PATH, ".txt", 0,
+                                           BLOCKLIST_MAX_FILES, all_names, &more_raw);
     if (raw_count < 0) {
-        free(file_names);
+        free(all_names);
         return NULL;
     }
+    (void)more_raw; /* sinkhole folders hold a handful of files; 64 is ample */
 
-    int count = 0;
+    int visible = 0;
     for (int i = 0; i < raw_count; i++) {
-        if (strcmp(file_names[i], "stats.txt") == 0) continue;
-        if (i != count) strcpy(file_names[count], file_names[i]);
-        count++;
+        if (strcmp(all_names[i], "stats.txt") == 0) continue;
+        if (i != visible) memcpy(all_names[visible], all_names[i], MAX_PORTAL_NAME);
+        visible++;
     }
 
-    blocklist_has_next_page = (raw_count > BLOCKLIST_PAGE_SIZE);
-    if (count > BLOCKLIST_PAGE_SIZE) {
-        count = BLOCKLIST_PAGE_SIZE;
-        blocklist_has_next_page = true;
-    }
+    int start = blocklist_page_offset;
+    if (start < 0) start = 0;
+    if (start > visible) start = visible;
+    int end = start + BLOCKLIST_PAGE_SIZE;
+    if (end > visible) end = visible;
+    int count = end - start;
 
-    bool show_prev = (blocklist_page_offset > 0);
-    bool show_next = blocklist_has_next_page;
+    bool show_prev = start > 0;
+    bool show_next = end < visible;
     int total = (show_prev ? 1 : 0) + count + (show_next ? 1 : 0);
 
     if (total == 0) {
-        free(file_names);
+        free(all_names);
         return NULL;
     }
 
@@ -13784,7 +13797,7 @@ static const char **blocklist_load_page(void) {
     blocklist_file_options = malloc(sizeof(char *) * ((size_t)total + 1));
 
     if (!blocklist_file_names || !blocklist_file_options) {
-        free(file_names);
+        free(all_names);
         blocklist_free_cache();
         return NULL;
     }
@@ -13797,7 +13810,7 @@ static const char **blocklist_load_page(void) {
         idx++;
     }
     for (int i = 0; i < count; i++) {
-        strcpy(blocklist_file_names + idx * MAX_PORTAL_NAME, file_names[i]);
+        strcpy(blocklist_file_names + idx * MAX_PORTAL_NAME, all_names[start + i]);
         blocklist_file_options[idx] = blocklist_file_names + idx * MAX_PORTAL_NAME;
         idx++;
     }
@@ -13808,7 +13821,7 @@ static const char **blocklist_load_page(void) {
     }
     blocklist_file_options[idx] = NULL;
 
-    free(file_names);
+    free(all_names);
     return blocklist_file_options;
 }
 

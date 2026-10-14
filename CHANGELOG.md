@@ -6,13 +6,23 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 
 ## v2.2.2
 
+### Added
+
+- Added NEW Sentry view that fuses the Flock camera detector, BLE device-detect and NEW WiFi camera/ALPR/Ring/Axon detectors
+- BLE device detect scan now recognises Meta glasses and Google Find My tags
+- Added slide-to-unlock for the no-PIN lockscreen on touchscreen devices and enabled it by default
+
 ### Fixed
 
 - Fixed a heap buffer overflow in the Sinkhole blocklist when the sinkhole folder held 9 or more `.txt` files
-- Fixed GPS satellites-in-view/fix-mode/validity flickering on multi-constellation receivers (GPS, GLONASS, Galileo, BeiDou): these fields are now arbitrated per NMEA talker instead of letting each constellation's sentence overwrite the last
-- Fixed the GPS NMEA parser applying fields from sentences that fail their checksum, which could publish a corrupt coordinate or satellite count
+- Fixed GPS satellites-in-view/fix-mode/validity flickering on multi-constellation receivers
+- Fixed the GPS NMEA parser applying fields from sentences that fail their checksum
 - Fixed GPS fix detection on receivers that supply validity through GGA only, and added ZDA/GST/GBS sentence handling
 - Fixed GPS fixes being rejected on receivers that never emit GSA
+- Fixed the setup wizard freezing on CYD boards when a long region/option list exhausted the LVGL pool
+- Setup wizard lists now scroll with touch drag like the other native views
+- Fixed the DNS sinkhole blocklist picker duplicating or skipping entries across pages when `stats.txt` was present (it now pages over the visible list)
+- Fixed the shell command registry running out of slots, which silently dropped the newest commands on the largest board configs
 
 ## v2.2.1
 
