@@ -13,6 +13,8 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 - Fixed the GPS NMEA parser applying fields from sentences that fail their checksum, which could publish a corrupt coordinate or satellite count
 - Fixed GPS fix detection on receivers that supply validity through GGA only, and added ZDA/GST/GBS sentence handling
 - Fixed GPS fixes being rejected on receivers that never emit GSA
+- Fixed the setup wizard freezing on CYD boards when a long region/option list exhausted the LVGL pool: list rows are now a single shared-style label and long lists paginate with `< Prev` / `Next >`
+- Setup wizard lists now scroll with touch drag like the other native views
 
 ## v2.2.1
 
