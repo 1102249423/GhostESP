@@ -15,6 +15,7 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 - Fixed GPS fixes being rejected on receivers that never emit GSA
 - Fixed the setup wizard freezing on CYD boards when a long region/option list exhausted the LVGL pool
 - Setup wizard lists now scroll with touch drag like the other native views
+- Fixed the DNS sinkhole blocklist picker duplicating or skipping entries across pages when `stats.txt` was present (it now pages over the visible list)
 
 ## v2.2.1
 
