@@ -71,8 +71,9 @@ void format_mac_address(const uint8_t *mac, char *buffer, size_t buffer_len, boo
 //
 // Privacy mode hides identifying Wi-Fi/BLE data (SSIDs, MAC addresses) that
 // would otherwise end up in wardriving maps and screenshots. It is strictly a
-// display-time transform: it never mutates stored scan data and uses no heap
-// or static buffers, so it costs nothing in RAM/BSS when disabled.
+// display-time transform: it never mutates stored scan data, never affects the
+// data written to wardrive/scan files (CSV, pcap, wigle), and uses no heap or
+// static buffers, so it costs nothing in RAM/BSS when disabled.
 //
 // Callers redact a *copy* of the text they are about to show and must not feed
 // the redacted string back into parsing/lookup logic.
