@@ -3811,6 +3811,7 @@ static bool touch_move_events_enabled_for_view_name(const char *view_name) {
           strcmp(view_name, "LoRa") == 0 ||
           strcmp(view_name, "Ethernet") == 0 ||
           strcmp(view_name, "AirspaceMonitorView") == 0 ||
+          strcmp(view_name, "SentryView") == 0 ||
           strcmp(view_name, "Audio Player") == 0 ||
           strcmp(view_name, "Camera") == 0 ||
           strcmp(view_name, "Main Menu") == 0 ||
@@ -3831,6 +3832,10 @@ static bool touch_move_events_enabled_for_view_name(const char *view_name) {
 }
 
 static bool touch_move_events_enabled_for_current_view(void) {
+  /* The lockscreen overlay leaves the underlying view as dm.current_view, but
+   * input belongs to the lockscreen: its slide-to-unlock needs drag samples
+   * whatever view is underneath. */
+  if (s_lockscreen_overlay_active) return true;
   if (!dm.mutex) return false;
 
   bool enabled = false;

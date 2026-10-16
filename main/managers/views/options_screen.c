@@ -59,6 +59,7 @@
 #include "scans/ble/gatt_scan.h"
 #include "scans/wifi/station_scan.h"
 #include "scans/wifi/arp_scan.h"
+#include "scans/wifi/local_scan.h"
 #include "scans/wifi/govee_scan.h"
 #include "scans/wifi/enum4linux_scan.h"
 #include "core/commands.h"
@@ -1518,7 +1519,7 @@ static const char * const wifi_environment_options[] = {
 };
 
 static const char * const wifi_network_options[] = {
-    "mDNS Discovery", "ARP Sweep", "List Hosts (ARP)", "Scan Open Ports", "SSH Banner Scan",
+    "Local Scan", "List Local Scan", "ARP Sweep", "List Hosts (ARP)", "Scan Open Ports", "SSH Banner Scan",
     "NetBIOS Scan", "HTTP Banner Scan", "SNMP Probe",
     "SMB Enum (enum4linux)", "SNMP Walk",
     "NetBIOS Subnet...", "HTTP Banner Subnet...", "SNMP Probe Subnet...", "SNMP Walk Subnet...",
@@ -1623,7 +1624,7 @@ static const char * const dual_comm_scan_options[] = {
     "Scan Stations",
     "Scan AP + STA",
     "Sweep",
-    "mDNS Discovery",
+    "Local Scan",
     "ARP Scan Network",
     "Scan Open Ports",
     "Scan SSH",
@@ -3022,28 +3023,37 @@ static void mdns_list_cleanup(void) {
         detail_view_destroy(mdns_detail_view);
         mdns_detail_view = NULL;
     }
-    wifi_manager_ip_lookup_clear();
+    // Results stay in memory (like the ARP list) so "List Local Scan" can
+    // reopen them; the next scan replaces them.
 }
 
 static int mdns_list_load_fn(int offset, int page_size, char names[][PAGED_MENU_NAME_MAX],
                               bool *has_more, void *user_data) {
     (void)user_data;
-    int count = wifi_manager_ip_lookup_get_count();
+    int count = local_scan_get_count();
     if (count <= 0) {
         *has_more = false;
         return 0;
     }
     int loaded = 0;
     for (int i = offset; i < count && loaded < page_size; i++) {
-        const mdns_device_t *dev = wifi_manager_ip_lookup_get_device(i);
+        const local_host_t *dev = local_scan_get_host(i);
         if (dev) {
-            char hostname_disp[64];
-            const char *host_label = dev->ip;
-            if (dev->hostname[0]) {
-                privacy_redact_text_copy(dev->hostname, hostname_disp, sizeof(hostname_disp));
-                host_label = hostname_disp;
+            char ip[16];
+            local_scan_ip_str(dev, ip, sizeof(ip));
+            if (dev->name[0]) {
+                char name_disp[64];
+                privacy_redact_text_copy(dev->name, name_disp, sizeof(name_disp));
+                snprintf(names[loaded], PAGED_MENU_NAME_MAX, "%s  %s", name_disp, ip);
+            } else {
+                // No hostname found: show the MAC vendor instead, like the ARP list
+                char mac_str[18] = "";
+                char vendor[64] = {0};
+                format_mac_address_masked(dev->mac, mac_str, sizeof(mac_str), true);
+                ouis_lookup_vendor(mac_str, vendor, sizeof(vendor));
+                snprintf(names[loaded], PAGED_MENU_NAME_MAX, "%s  %s", ip,
+                         vendor[0] ? vendor : mac_str);
             }
-            snprintf(names[loaded], PAGED_MENU_NAME_MAX, "%s  %s", host_label, dev->ip);
             loaded++;
         }
     }
@@ -3069,7 +3079,7 @@ static void mdns_detail_back_cb(lv_event_t *e) {
 }
 
 static void show_mdns_detail(int index) {
-    const mdns_device_t *dev = wifi_manager_ip_lookup_get_device(index);
+    const local_host_t *dev = local_scan_get_host(index);
     if (!dev) {
         error_popup_create("Device not found");
         return;
@@ -3079,22 +3089,42 @@ static void show_mdns_detail(int index) {
     if (mdns_detail_view) {
         detail_view_destroy(mdns_detail_view);
     }
-    mdns_detail_view = detail_view_create(lv_scr_act(), "mDNS Device");
+    mdns_detail_view = detail_view_create(lv_scr_act(), "Local Host");
     reserve_detail_touch_bar_space(mdns_detail_view);
 
-    if (dev->hostname[0]) {
-        char hostname_disp[64];
-        privacy_redact_text_copy(dev->hostname, hostname_disp, sizeof(hostname_disp));
-        detail_view_add_info(mdns_detail_view, "Hostname", hostname_disp);
+    if (dev->name[0]) {
+        char name_disp[64];
+        privacy_redact_text_copy(dev->name, name_disp, sizeof(name_disp));
+        detail_view_add_info(mdns_detail_view, "Name", name_disp);
     }
-    detail_view_add_info(mdns_detail_view, "IP", dev->ip);
-    if (dev->port > 0) {
-        char port_str[8];
-        snprintf(port_str, sizeof(port_str), "%u", dev->port);
-        detail_view_add_info(mdns_detail_view, "Port", port_str);
+    char ip[16];
+    local_scan_ip_str(dev, ip, sizeof(ip));
+    detail_view_add_info(mdns_detail_view, "IP", ip);
+
+    bool has_mac = false;
+    for (int i = 0; i < 6; i++) {
+        if (dev->mac[i]) has_mac = true;
     }
-    if (dev->service_type[0]) {
-        detail_view_add_info(mdns_detail_view, "Service", dev->service_type);
+    if (has_mac) {
+        char mac_str[18];
+        char vendor[64] = {0};
+        format_mac_address_masked(dev->mac, mac_str, sizeof(mac_str), true);
+        detail_view_add_info(mdns_detail_view, "MAC", mac_str);
+        ouis_lookup_vendor(mac_str, vendor, sizeof(vendor));
+        if (vendor[0]) {
+            detail_view_add_info(mdns_detail_view, "Vendor", vendor);
+        }
+    }
+    const char *os_hint = local_scan_os_hint(dev->ttl);
+    if (os_hint) {
+        char ttl_str[40];
+        snprintf(ttl_str, sizeof(ttl_str), "%u (%s)", dev->ttl, os_hint);
+        detail_view_add_info(mdns_detail_view, "TTL", ttl_str);
+    }
+    char svc[96];
+    local_scan_services_str(dev->services, svc, sizeof(svc));
+    if (svc[0]) {
+        detail_view_add_info(mdns_detail_view, "Services", svc);
     }
 
     detail_view_add_back(mdns_detail_view, mdns_detail_back_cb, NULL);
@@ -3106,7 +3136,7 @@ static void mdns_scan_complete_callback(void) {
         scan_status_close(mdns_scan_status);
         mdns_scan_status = NULL;
     }
-    int count = wifi_manager_ip_lookup_get_count();
+    int count = local_scan_get_count();
     if (count == 0) {
         error_popup_create("No devices found");
         current_wifi_menu_state = WIFI_MENU_NETWORK;
@@ -3122,16 +3152,26 @@ static void mdns_scan_complete_callback(void) {
 
 static void mdns_scan_poll_timer_cb(lv_timer_t *timer) {
     (void)timer;
-    if (wifi_manager_ip_lookup_check_done()) {
+    if (local_scan_check_done()) {
         lv_timer_del(mdns_scan_poll_timer);
         mdns_scan_poll_timer = NULL;
-        wifi_manager_ip_lookup_finish_async();
+        local_scan_finish_async();
         if (mdns_scan_cancel_requested) {
             mdns_scan_cancel_requested = false;
-            wifi_manager_ip_lookup_clear();
+            local_scan_clear_results();
             return;
         }
         mdns_scan_complete_callback();
+        return;
+    }
+    // Live progress: current phase and hosts found so far
+    const char *phase = NULL;
+    int found = 0;
+    local_scan_get_status(&phase, &found);
+    if (phase && mdns_scan_status) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "%s  %d found", phase, found);
+        scan_status_set_subtext(mdns_scan_status, buf);
     }
 }
 
@@ -3150,18 +3190,19 @@ static void mdns_scan_cancel_cb(void) {
     if (mdns_scan_cancel_requested) return;
     mdns_scan_cancel_requested = true;
     option_input_blocked_until_us = esp_timer_get_time() + 500000;
+    local_scan_cancel();
     lv_async_call(mdns_scan_cancel_cleanup, NULL);
 }
 
 static bool start_mdns_scan_flow(void) {
     mdns_list_cleanup();
     mdns_scan_cancel_requested = false;
-    mdns_scan_status = scan_status_create("mDNS Discovery");
+    mdns_scan_status = scan_status_create("Local Scan");
     if (mdns_scan_status) {
         scan_status_set_subtext(mdns_scan_status, "Tap to cancel");
         scan_status_set_cancel_cb(mdns_scan_status, mdns_scan_cancel_cb);
     }
-    esp_err_t err = wifi_manager_start_ip_lookup_async();
+    esp_err_t err = local_scan_start_async();
     if (err != ESP_OK) {
         if (mdns_scan_status) {
             scan_status_close(mdns_scan_status);
@@ -3621,6 +3662,9 @@ static void update_scroll_buttons_visibility(void) {
         force_show = true;
     } else if (arp_detail_view && current_wifi_menu_state == WIFI_MENU_ARP_DETAILS) {
         target = detail_view_get_list(arp_detail_view);
+        force_show = true;
+    } else if (mdns_detail_view && current_wifi_menu_state == WIFI_MENU_MDNS_DETAILS) {
+        target = detail_view_get_list(mdns_detail_view);
         force_show = true;
     } else if (ble_detect_detail_view && current_bluetooth_menu_state == BLUETOOTH_MENU_DETECT_DETAILS) {
         target = detail_view_get_list(ble_detect_detail_view);
@@ -6185,6 +6229,8 @@ void handle_hardware_button_press_options(InputEvent *event) {
                         active_detail_view = sta_detail_view;
                     } else if (arp_detail_view && opt_touch_wifi_state == WIFI_MENU_ARP_DETAILS) {
                         active_detail_view = arp_detail_view;
+                    } else if (mdns_detail_view && opt_touch_wifi_state == WIFI_MENU_MDNS_DETAILS) {
+                        active_detail_view = mdns_detail_view;
                     } else if (ble_detect_detail_view &&
                                opt_touch_bluetooth_state == BLUETOOTH_MENU_DETECT_DETAILS) {
                         active_detail_view = ble_detect_detail_view;
@@ -6253,6 +6299,7 @@ void handle_hardware_button_press_options(InputEvent *event) {
                 gtk_abuse_detail_view ||
                 (sta_detail_view && current_wifi_menu_state == WIFI_MENU_STA_DETAILS) ||
                 (arp_detail_view && current_wifi_menu_state == WIFI_MENU_ARP_DETAILS) ||
+                (mdns_detail_view && current_wifi_menu_state == WIFI_MENU_MDNS_DETAILS) ||
                 (ble_detect_detail_view &&
                  current_bluetooth_menu_state == BLUETOOTH_MENU_DETECT_DETAILS) ||
                 (ble_adv_detail_view &&
@@ -6303,6 +6350,8 @@ void handle_hardware_button_press_options(InputEvent *event) {
                 active_detail_view = sta_detail_view;
             } else if (arp_detail_view && opt_touch_wifi_state == WIFI_MENU_ARP_DETAILS) {
                 active_detail_view = arp_detail_view;
+            } else if (mdns_detail_view && opt_touch_wifi_state == WIFI_MENU_MDNS_DETAILS) {
+                active_detail_view = mdns_detail_view;
             } else if (ble_detect_detail_view &&
                        opt_touch_bluetooth_state == BLUETOOTH_MENU_DETECT_DETAILS) {
                 active_detail_view = ble_detect_detail_view;
@@ -7767,7 +7816,7 @@ void option_event_cb(lv_event_t *e) {
             display_manager_switch_view(&terminal_view);
             simulateCommand("commsend sweep");
             view_switched = true;
-        } else if (strcmp(Selected_Option, "mDNS Discovery") == 0) {
+        } else if (strcmp(Selected_Option, "Local Scan") == 0) {
             terminal_set_return_view(&options_menu_view);
             terminal_set_dualcomm_filter(true);
             display_manager_switch_view(&terminal_view);
@@ -9267,7 +9316,26 @@ void option_event_cb(lv_event_t *e) {
         view_switched = true;
     }
 
-    else if (strcmp(Selected_Option, "mDNS Discovery") == 0) {
+    else if (strcmp(Selected_Option, "Local Scan") == 0) {
+        if (!start_mdns_scan_flow()) {
+            error_popup_create("Scan failed to start");
+        }
+        option_invoked = false;
+        return;
+    }
+
+    else if (strcmp(Selected_Option, "List Local Scan") == 0) {
+        // Re-open the last results; only scan again when there are none.
+        if (local_scan_get_count() > 0) {
+            if (mdns_list_menu) {
+                paged_menu_reset(mdns_list_menu);
+            }
+            current_wifi_menu_state = WIFI_MENU_MDNS_LIST;
+            rebuild_current_menu();
+            option_invoked = false;
+            return;
+        }
+
         if (!start_mdns_scan_flow()) {
             error_popup_create("Scan failed to start");
         }

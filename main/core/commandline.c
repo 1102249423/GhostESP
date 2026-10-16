@@ -426,6 +426,7 @@ void register_commands() {
     register_command("capture", handle_capture_scan);
     register_command("startportal", handle_start_portal);
     register_command("disconnect", handle_wifi_disconnect);
+    register_command("forgetwifi", handle_wifi_forget);
     register_command("wifistatus", handle_wifi_status);
     register_command("autoreconnect", handle_wifi_autoreconnect_cmd);
     register_command("stopportal", stop_portal);

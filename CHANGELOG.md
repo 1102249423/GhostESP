@@ -4,6 +4,27 @@
 Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A trailing `@handle` credits a guest contributor for that specific line. "Ported from / adapted from" credits the upstream source a feature was based on, not GhostESP authorship.
 
 
+## v2.2.3
+
+### Added
+
+- Reworked `scanlocal` into a full local host scan: it finds hosts with ARP, then identifies each one by NetBIOS name, mDNS hostname, ICMP TTL and mDNS/SSDP services
+- Local scan results now show MAC, vendor, hostname, OS hint and services for each host
+- Added `scanarp stop` and `scanlocal stop`
+- Added `forgetwifi` command to clear the saved WiFi network and disconnect from it
+- Cloud Store now shows a clear "No internet. Connect GhostESP to WiFi" message when opened, refreshed or installing without a connection
+- Renamed the "mDNS Discovery" menu entry to "Local Scan" and added "List Local Scan" to reopen the last results without rescanning
+
+### Fixed
+
+- Fixed `scanarp` over the CLI immediately printing "ARP scan cancelled" and scanning nothing
+- Fixed `scanlocal` finding nothing when the web/AP services weren't running
+- Fixed cancelling the local scan from the UI not actually stopping it
+- Fixed slide-to-unlock not responding when the lockscreen appeared over a view like Sentry
+- Fixed Sentry detection popups showing above the lockscreen
+- Fixed touch drag scrolling in the Sentry list and detail views
+- Fixed touch scrolling and the Back row not working in the Local Scan host detail view
+
 ## v2.2.2
 
 ### Added

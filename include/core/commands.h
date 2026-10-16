@@ -22,6 +22,7 @@ void handle_sta_scan(int argc, char **argv);
 void handle_select_cmd(int argc, char **argv);
 void handle_wifi_connection(int argc, char **argv);
 void handle_wifi_disconnect(int argc, char **argv);
+void handle_wifi_forget(int argc, char **argv);
 void handle_wifi_status(int argc, char **argv);
 void handle_wifi_autoreconnect_cmd(int argc, char **argv);
 #if defined(CONFIG_IDF_TARGET_ESP32P4)

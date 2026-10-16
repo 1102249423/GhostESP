@@ -1150,6 +1150,12 @@ static void update_display_cb(lv_timer_t *timer) {
 
     // Alert on the first alert-worthy device not seen in the cooldown window;
     // the first tick only marks what is already in range.
+    // While the lockscreen overlay is up, popups would be drawn above it (and
+    // swallow the unlock); drop any showing and hold new ones until unlock.
+    // Nothing is marked as seen, so a device still in range alerts afterwards.
+    const bool locked = display_manager_is_lockscreen_active();
+    if (locked) hide_alert();
+
     const sentry_rec_t *pick = NULL;
     for (int i = 0; i < s_rec_count && pick == NULL; i++) {
         if (!s_rec[i].alert) continue;
@@ -1162,7 +1168,7 @@ static void update_display_cb(lv_timer_t *timer) {
     }
     if (!s_alert_primed) {
         s_alert_primed = true;
-    } else if (pick != NULL) {
+    } else if (pick != NULL && !locked) {
         alert_mark(pick->mac);
         show_alert(pick);
     }
