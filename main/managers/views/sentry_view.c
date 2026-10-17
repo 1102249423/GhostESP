@@ -81,7 +81,7 @@ extern const lv_img_dsc_t what2_50x50;
 
 // hit categories
 enum { SENTRY_KIND_FLOCK = 0, SENTRY_KIND_TRACKER, SENTRY_KIND_SKIMMER,
-       SENTRY_KIND_GEAR, SENTRY_KIND_OTHER };
+       SENTRY_KIND_GEAR, SENTRY_KIND_OTHER, SENTRY_KIND_CAMERA };
 
 typedef struct {
     bool used;
@@ -218,6 +218,7 @@ static const char *ble_tag(BLEDetectDeviceType type) {
         case BLE_DETECT_DEVICE_CHAMELEON:   return "CHAMELN";
         case BLE_DETECT_DEVICE_META_GLASSES: return "META";
         case BLE_DETECT_DEVICE_GOOGLE_TAG:   return "GOOGLE";
+        case BLE_DETECT_DEVICE_NEST:         return "NEST";
         default:                            return "BLE";
     }
 }
@@ -233,6 +234,7 @@ static uint8_t ble_kind(BLEDetectDeviceType type) {
         case BLE_DETECT_DEVICE_CHIPOLO:
         case BLE_DETECT_DEVICE_FINDMY:
         case BLE_DETECT_DEVICE_GOOGLE_TAG: return SENTRY_KIND_TRACKER;
+        case BLE_DETECT_DEVICE_NEST:     return SENTRY_KIND_CAMERA;
         default:                         return SENTRY_KIND_OTHER;
     }
 }
@@ -242,7 +244,8 @@ static uint8_t ble_score(BLEDetectDeviceType type) {
         case BLE_DETECT_DEVICE_SKIMMER:   return 100;
         case BLE_DETECT_DEVICE_FLIPPER:
         case BLE_DETECT_DEVICE_CHAMELEON: return 90;
-        case BLE_DETECT_DEVICE_META_GLASSES: return 85;
+        case BLE_DETECT_DEVICE_META_GLASSES:
+        case BLE_DETECT_DEVICE_NEST:      return 85;
         case BLE_DETECT_DEVICE_AIRTAG:    return 80;
         case BLE_DETECT_DEVICE_TILE:
         case BLE_DETECT_DEVICE_SMARTTAG:
@@ -258,6 +261,7 @@ static uint32_t kind_color(uint8_t kind, bool alert) {
         case SENTRY_KIND_SKIMMER: return c_error;
         case SENTRY_KIND_FLOCK:   return alert ? c_error : c_warn;
         case SENTRY_KIND_GEAR:
+        case SENTRY_KIND_CAMERA:
         case SENTRY_KIND_TRACKER: return c_warn;
         default:                  return c_accent;
     }
@@ -270,6 +274,7 @@ static const char *flock_class_tag(uint8_t cls) {
         case FLOCK_CLASS_RING:   return "RING";
         case FLOCK_CLASS_AXON:   return "AXON";
         case FLOCK_CLASS_HAK5:   return "PINEAPPLE";
+        case FLOCK_CLASS_NEST:   return "NEST";
         default:                 return "FLOCK";
     }
 }
@@ -284,6 +289,7 @@ static const char *rec_category(const sentry_rec_t *r) {
             case FLOCK_CLASS_RING:   return "Doorbell camera";
             case FLOCK_CLASS_AXON:   return "Body camera";
             case FLOCK_CLASS_HAK5:   return "WiFi Pineapple (Hak5)";
+            case FLOCK_CLASS_NEST:   return "Nest camera / doorbell";
             default:                 return "Flock Safety camera";
         }
     }
@@ -291,6 +297,7 @@ static const char *rec_category(const sentry_rec_t *r) {
         case SENTRY_KIND_SKIMMER: return "Card skimmer";
         case SENTRY_KIND_GEAR:    return "Pentest hardware";
         case SENTRY_KIND_TRACKER: return "Tracker";
+        case SENTRY_KIND_CAMERA:  return "Nest camera / doorbell";
         default:                  return "BLE device";
     }
 }
@@ -301,6 +308,7 @@ static const lv_img_dsc_t *kind_face(uint8_t kind) {
         case SENTRY_KIND_FLOCK:
         case SENTRY_KIND_SKIMMER: return &evil_50x50;
         case SENTRY_KIND_GEAR:    return &angry_50x50;
+        case SENTRY_KIND_CAMERA:
         case SENTRY_KIND_TRACKER: return &surpised_50x50;
         default:                  return &what2_50x50;
     }
@@ -335,7 +343,8 @@ static int rec_slot(void) {
 
 static void rec_upsert(const char *mac, bool ble, uint8_t kind, uint8_t flock_class,
                        uint8_t score, bool alert, int8_t rssi, uint8_t ch,
-                       uint32_t color, const char *tag, const char *name, const char *sub) {
+                       uint32_t color, const char *tag, const char *name, const char *sub,
+                       uint32_t seen_ms) {
     if (!s_rec) return;
     int i = rec_find(mac);
     if (i < 0) {
@@ -353,7 +362,10 @@ static void rec_upsert(const char *mac, bool ble, uint8_t kind, uint8_t flock_cl
     s_rec[i].rssi = rssi;
     s_rec[i].channel = ch;
     s_rec[i].color = color;
-    s_rec[i].last_seen = now_ms();
+    // Real time the radio last heard it (merges run every tick, so now_ms()
+    // would pin every row at "just now"). Never move backwards.
+    if (seen_ms == 0 || seen_ms > now_ms()) seen_ms = now_ms();
+    if (seen_ms > s_rec[i].last_seen) s_rec[i].last_seen = seen_ms;
     if (s_rec[i].hits < 0xFFFFFFFFu) s_rec[i].hits++;
     snprintf(s_rec[i].tag, sizeof(s_rec[i].tag), "%s", tag);
     if (name && name[0]) snprintf(s_rec[i].name, sizeof(s_rec[i].name), "%s", name);
@@ -375,7 +387,8 @@ static void sentry_merge(void) {
         rec_upsert(d->mac, false, SENTRY_KIND_FLOCK, cls,
                    (uint8_t)(vendor ? 85 : (high ? 95 : 50)), alert,
                    d->rssi, d->channel, alert ? c_error : c_warn,
-                   flock_class_tag(cls), d->ssid[0] ? d->ssid : d->mac, d->method);
+                   flock_class_tag(cls), d->ssid[0] ? d->ssid : d->mac, d->method,
+                   d->last_seen_ms);
     }
 
     int bc = ble_device_detect_get_count();
@@ -391,7 +404,7 @@ static void sentry_merge(void) {
                          : (info.subtype[0] ? info.subtype : mac);
         rec_upsert(mac, true, kind, FLOCK_CLASS_NONE, score, alert, info.rssi, 0,
                    kind_color(kind, alert), ble_tag(info.type), name,
-                   ble_device_detect_type_to_string(info.type));
+                   ble_device_detect_type_to_string(info.type), info.last_seen_ms);
     }
 
     // No staleness eviction: a device seen once stays in the cache until ten
@@ -420,6 +433,16 @@ static void sentry_merge(void) {
     s_rec_count = w;
 }
 
+// "seen 5s ago" style age of the last sighting; "now" while it is live.
+static void format_ago(uint32_t last_seen, char *out, size_t os) {
+    uint32_t now = now_ms();
+    uint32_t s = (now > last_seen) ? (now - last_seen) / 1000 : 0;
+    if (s < 2) snprintf(out, os, "seen now");
+    else if (s < 60) snprintf(out, os, "seen %us ago", (unsigned)s);
+    else if (s < 3600) snprintf(out, os, "seen %um ago", (unsigned)(s / 60));
+    else snprintf(out, os, "seen %uh ago", (unsigned)(s / 3600));
+}
+
 static void format_rec(const sentry_rec_t *r, char *head, size_t hs, char *det, size_t ds) {
     /* r->name can be an SSID or a MAC; r->mac is always a formatted MAC. Redact
      * stack copies only -- s_rec[] stays raw for parse/compare/track logic. */
@@ -429,19 +452,23 @@ static void format_rec(const sentry_rec_t *r, char *head, size_t hs, char *det, 
     snprintf(mac, sizeof(mac), "%s", r->mac);
     privacy_redact_mac(mac);
     snprintf(head, hs, "%s  %s", r->tag, name);
-    if (r->ble) snprintf(det, ds, "%s  %ddBm", mac, (int)r->rssi);
-    else snprintf(det, ds, "%s  %ddBm ch%u", mac, (int)r->rssi, (unsigned)r->channel);
+    char ago[16];
+    format_ago(r->last_seen, ago, sizeof(ago));
+    if (r->ble) snprintf(det, ds, "%s  %ddBm  %s", mac, (int)r->rssi, ago);
+    else snprintf(det, ds, "%s  %ddBm ch%u  %s", mac, (int)r->rssi, (unsigned)r->channel, ago);
 }
 
 // ---- radios ---------------------------------------------------------------
 
 static void radio_start_flock(void) {
+    flock_detector_set_show_all(true);
     if (flock_detector_is_running()) return;
     flock_detector_init();
     if (flock_detector_start() == ESP_OK) s_flock_started = true;
 }
 
 static void radio_stop_flock(void) {
+    flock_detector_set_show_all(false);
     if (s_flock_started) {
         flock_detector_stop();
         s_flock_started = false;
@@ -830,6 +857,11 @@ static void open_detail(void) {
     detail_view_add_infof(detail, "Signal", "%d dBm", (int)s_detail->rssi);
     detail_view_add_infof(detail, "Hits", "%u", (unsigned)s_detail->hits);
     detail_view_add_infof(detail, "Age", "%us", (unsigned)((now_ms() - s_detail->first_seen) / 1000));
+    {
+        char ago[16];
+        format_ago(s_detail->last_seen, ago, sizeof(ago));
+        detail_view_add_info(detail, "Last seen", ago + 5);  // drop the "seen " prefix
+    }
 
     detail_view_add_action(detail, "Track", sentry_track_cb, NULL);
     detail_view_add_back(detail, detail_back_cb, NULL);

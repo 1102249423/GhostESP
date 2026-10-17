@@ -16,8 +16,11 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 - BadBLE's Run Script list and `badble run`/`badble list` now also find scripts in `/mnt/ghostesp/badusb/`, not just `/mnt/ghostesp/badble/`
 - Renamed the "mDNS Discovery" menu entry to "Local Scan" and added "List Local Scan" to reopen the last results without rescanning
 
-### Fixed
+### Changed
+- Sentry now detects Google Nest cameras and doorbells over BLE and over WiFi - pre2
+- Sentry rows now show how long ago each device was last seen - pre2
 
+### Fixed
 - Fixed `scanarp` over the CLI immediately printing "ARP scan cancelled" and scanning nothing
 - Fixed `scanlocal` finding nothing when the web/AP services weren't running
 - Fixed cancelling the local scan from the UI not actually stopping it
