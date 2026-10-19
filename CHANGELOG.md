@@ -28,6 +28,7 @@ Untagged entries are by ([@jaylikesbunda](https://github.com/jaylikesbunda)). A 
 - Fixed Sentry detection popups showing above the lockscreen
 - Fixed touch drag scrolling in the Sentry list and detail views
 - Fixed touch scrolling and the Back row not working in the Local Scan host detail view
+- Fixed CrowPanel Advance 4.3" V1.1 backlight initialization - @patlaluci-prog (#432)
 
 ## v2.2.2
 
